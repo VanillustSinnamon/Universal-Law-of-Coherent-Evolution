@@ -4,12 +4,12 @@ from scipy.optimize import curve_fit
 from scipy.integrate import odeint
 
 # --- 1. Define the Universal PEF Equation for ODE Integration ---
-def pef_ode(P, t, alpha, beta, a, b, c, eta_const): # Parameters adjusted
+def pef_ode(P, t, alpha, beta, a, c, S_const, eta_const):
     P_val = np.maximum(P, 1e-9) 
     
     C = a * P_val                          
-    S = b * (1 - P_val) # ***CRITICAL CHANGE: S now models inverse vitality***
-    E = c * P_val # ***CRITICAL CHANGE: E now models linear dissonance with P***
+    S = S_const                            
+    E = c * P_val # E now models linear dissonance with P
     eta = eta_const 
 
     numerator = C * np.log1p(S) 
@@ -17,6 +17,9 @@ def pef_ode(P, t, alpha, beta, a, b, c, eta_const): # Parameters adjusted
     denominator = np.maximum(denominator, 1e-10) 
 
     dPdt = alpha * (numerator / denominator) * eta
+    # ***CRITICAL CHANGE: Added saturation cap***
+    dPdt *= (1 - P_val) # This term forces dPdt to zero as P_val approaches 1
+    
     return dPdt
 
 # 🧠 STEP 1: Simulate AI Learning Vitality Curve (REDUCED NOISE)
@@ -27,17 +30,17 @@ P_data = P_data_clean + np.random.normal(0, 0.005, size=t_data.shape)
 P_data = np.clip(P_data, 0.0, 1.0) 
 
 # 🧠 STEP 2: Define Wrapper for Curve Fitting (Integrate PEF)
-def integrated_pef_model(t, alpha, beta, a, b, c, eta_const): # Parameters adjusted
+def integrated_pef_model(t, alpha, beta, a, c, S_const, eta_const):
     P0 = P_data[0] 
-    P_integrated = odeint(pef_ode, P0, t, args=(alpha, beta, a, b, c, eta_const))
+    P_integrated = odeint(pef_ode, P0, t, args=(alpha, beta, a, c, S_const, eta_const))
     return P_integrated.T[0]
 
 # 🧠 STEP 3: Fit Parameters
-# Adjust initial guesses and bounds to stabilize the fit.
-# Now fitting 6 parameters.
+# Adjust initial guesses and bounds for a smoother, better fit.
 initial_guesses = [0.1, 1.0, 1.0, 1.0, 1.0, 1.0] 
 lower_bounds = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001] 
-upper_bounds = [10.0, 100.0, 10.0, 10.0, 10.0, 10.0] 
+# ***CRITICAL CHANGE: Expanded upper bounds as per Copilot's suggestion***
+upper_bounds = [100.0, 1000.0, 100.0, 100.0, 100.0, 100.0] 
 
 popt, _ = curve_fit(
     integrated_pef_model, 
@@ -58,7 +61,7 @@ plt.plot(t_data, P_data, label='Simulated AI Learning Vitality (Observed)', colo
 plt.plot(t_data, P_pred, label='Predicted AI Learning Vitality (PEF Fit)', linestyle='--', color='orange')
 plt.xlabel('Epochs / Training Steps')
 plt.ylabel('Accuracy (P)')
-plt.title('AI Learning: Vitality Trajectory (Integral Fit - New S & E)')
+plt.title('AI Learning: Vitality Trajectory (Integral Fit - Saturation Cap)')
 plt.grid(True)
 plt.legend()
 plt.show()
@@ -70,13 +73,13 @@ plt.plot(t_data, dP_obs_from_data, label='Observed dP/dt (from data)', color='bl
 plt.plot(t_data, dP_pred, label='Predicted dP/dt (from PEF Fit)', linestyle='--', color='orange')
 plt.xlabel('Epochs / Training Steps')
 plt.ylabel('Rate of Change (dP/dt)')
-plt.title('Reverse PEF Fit — AI Learning Dynamics (Integral Fit - New S & E)')
+plt.title('Reverse PEF Fit — AI Learning Dynamics (Integral Fit - Saturation Cap)')
 plt.grid(True)
 plt.legend()
 plt.show()
 
 # 🧠 STEP 7: Display Fitted Parameters
-print("🔬 Fitted PEF Parameters — AI Learning (Integral Fit - New S & E):")
-param_names = ['alpha', 'beta', 'a', 'b', 'c', 'eta_const'] # Updated param names
+print("🔬 Fitted PEF Parameters — AI Learning (Integral Fit - Saturation Cap):")
+param_names = ['alpha', 'beta', 'a', 'c', 'S_const', 'eta_const'] 
 for name, value in zip(param_names, popt):
     print(f"{name}: {value:.6f}")
