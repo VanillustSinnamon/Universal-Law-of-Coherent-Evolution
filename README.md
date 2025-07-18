@@ -89,7 +89,7 @@ Where others see noise, this method reveals structure. Where others fit curves, 
 
 IMPORTANT UPDATES:
 
-1.I decoded the dynamics and underlying coherent forces of Myoglobin's folding — not merely its final form. This is not curve fitting — this is process decryption.
+1. I decoded the dynamics and underlying coherent forces of Myoglobin's folding — not merely its final form. This is not curve fitting — this is process decryption.
 
 Using real, experimentally recorded biophysical data, I extracted the hidden PEF parameters that governed a molecule’s journey from disorder to order.
 
