@@ -1,94 +1,11 @@
 import numpy as np
-from scipy.integrate import odeint
-from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 import pandas as pd
 import io
+from scipy.integrate import odeint
+from scipy.optimize import differential_evolution
 
-# --- 1. Define the core PEF derivative function ---
-# P_dot now explicitly passes P to eta_func
-def P_dot(P, t, alpha, beta, C_func, S_func, E_func, eta_func):
-    """
-    Calculates the derivative of Placeholder Expansion P with respect to time t.
-    This is the core of the Placeholder Expansion Function (PEF) from the ERS framework.
-    Args:
-        P (float): Current value of Placeholder Expansion.
-        t (float): Current time.
-        alpha (float): Expansion coefficient (ontological drive).
-        beta (float): Dissonance integration coefficient (how system processes paradox).
-        C_func (callable): Function for System Coherence C(t).
-        S_func (callable): Function for Structural Complexity S(t).
-        E_func (callable): Function for Entropic Dissonance E(t).
-        eta_func (callable): Function for Temporal Pacing η(t), now takes (t, P).
-    Returns:
-        float: dP/dt, the rate of change of Placeholder Expansion.
-    """
-    C = C_func(t)
-    S = S_func(t)
-    E = E_func(t)
-    eta = eta_func(t, P) # eta_func now receives P
-
-    S_clamped = max(0, S) # Ensure S is non-negative for log1p
-    log_S_term = np.log1p(S_clamped)
-    denominator = 1 + beta * E
-    
-    dPdt = alpha * (C * log_S_term / denominator) * eta
-    return dPdt
-
-# --- 2. Define the function to be fitted by curve_fit (integrates P_dot) ---
-# This function now takes ALL parameters to be fitted, including those for the new functional forms
-def solve_pef_ode_full_refined(t_data, P0_initial, alpha, beta, 
-                               a_E, b_E, c_E, # E(t) Gaussian params
-                               d_C, e_C, f_C, # C(t) Logistic params
-                               f_S,           # S(t) power law scaling, g_S is fixed
-                               h_eta, i_eta, k_eta # eta(t) exponential decay + feedback params
-                              ):
-    """
-    Solves the PEF ODE for given parameters and time points, using Grok's suggested
-    refined functional forms for C(t), S(t), E(t), eta(t).
-    """
-    # Define the PEF component functions using the current fitting parameters
-    def E_func(t):
-        # E(t) = a_E * exp(-(t-b_E)^2/(2c_E^2)) * (1 + 0.2*sin(0.1*t + π/2)) * exp(-0.01*t)
-        # Add a small constant to 'c_E' to prevent division by zero if c_E becomes too small during fitting
-        gaussian_part = a_E * np.exp(-(t - b_E)**2 / (2 * (c_E + 1e-6)**2))
-        oscillatory_part = (1 + 0.2 * np.sin(0.1 * t + np.pi/2)) # Fixed amplitude and frequency
-        decay_part = np.exp(-0.01 * t) # Fixed decay rate
-        return np.maximum(0.01, gaussian_part * oscillatory_part * decay_part)
-
-    def C_func(t):
-        # C(t) = d_C / (1 + exp(-e_C*(t - f_C))) (Logistic cap)
-        # Clamp d_C and e_C to be positive
-        return np.maximum(1e-6, d_C) / (1 + np.exp(-np.maximum(1e-6, e_C) * (t - f_C)))
-
-    def S_func(t):
-        # S(t) = f_S * t^g_S, with g_S fixed at 0.25
-        g_S_fixed = 0.25 # Grok's fixed value
-        # Clamp f_S to be positive
-        return np.maximum(1e-6, f_S) * (t**g_S_fixed)
-
-    # eta_func now takes P as an argument from ode_wrapper
-    def eta_func(t, P_val): # P_val is the current P from odeint
-        # Decaying exponential with P-feedback: η(t, P) = h_eta * exp(-i_eta*t) * (1 + k_eta * P)
-        # Clamp h_eta, i_eta, k_eta to be positive
-        feedback_term = (1 + np.maximum(1e-6, k_eta) * P_val)
-        return np.maximum(1e-6, h_eta) * np.exp(-np.maximum(1e-6, i_eta) * t) * feedback_term
-
-    # Create a lambda function for P_dot with fixed component functions
-    # ode_wrapper now needs to pass P to eta_func
-    def ode_wrapper(P, t, alpha_val, beta_val):
-        return P_dot(P, t, alpha_val, beta_val, C_func, S_func, E_func, lambda t_arg, P_arg: eta_func(t_arg, P_arg))
-    
-    # Solve the ODE
-    # Ensure P0_initial is positive
-    sol = odeint(ode_wrapper, np.maximum(1e-6, P0_initial), t_data, args=(alpha, beta))
-    return sol[:, 0] # Return the P(t) values
-
-# --- 3. Load and Process Extracted Transformer Data ---
-# The user provided 'Default Dataset.csv' which contains the digitized data.
-# This assumes the first column is log10(Pre-training step) and the second is Surprisal.
-
-# Simulating content_fetcher.fetch for demonstration purposes
+# --- 1. Load the original GPT-3 P(t) data ---
 csv_data_string = """3.0131578947368425, 9.839116719242902
 3.0526315789473686, 9.813880126182966
 3.0855263157894735, 9.788643533123029
@@ -194,266 +111,184 @@ csv_data_string = """3.0131578947368425, 9.839116719242902
 """
 
 df = pd.read_csv(io.StringIO(csv_data_string), header=None)
+log10_t_data_original = df.iloc[:, 0].values
+surprisal_values_original = df.iloc[:, 1].values
+real_t = 10**log10_t_data_original # This is the original linear time data
+real_Pt = 1 / np.maximum(surprisal_values_original, 0.01) # This is the original P(t) data, clamped
 
-# Assume first column is log10(Pre-training step) and second is Surprisal
-log10_t_data = df.iloc[:, 0].values
-surprisal_values = df.iloc[:, 1].values
+# Time vector for plotting (log scale appropriate for GPT-3 data)
+t_plot = np.logspace(np.log10(real_t.min()), np.log10(real_t.max()), 1000)
 
-# Convert log10 steps to linear steps
-t_data = 10**log10_t_data
+# Function for a damped oscillator (using cos as per GPT-4o's definition)
+def mu(A, lam, w, phi, t_vec):
+    return A * np.exp(-lam * t_vec) * np.cos(w * t_vec + phi)
 
-# P(t) observed: Inverse Surprisal
-# Ensure surprisal_values are not zero or too close to zero before inversion
-P_t_observed = 1 / np.maximum(surprisal_values, 0.01) # Clamp to a small positive value
+# Objective function for differential_evolution
+# This function takes a flat array of parameters and returns the error.
+# The order of parameters in 'x' must match the order in 'bounds'.
+# x = [A_f, w_f, lam_f, phi_f, A_o, w_o, lam_o, phi_o, A_l, w_l, lam_l, phi_l, A_i, w_i, lam_i, phi_i, c_norm]
+def objective_function(x, t_data, true_Pt):
+    # Unpack parameters for each FOLI mode
+    params_unpacked = {
+        'Fact':        [x[0], x[2], x[1], x[3]],  # A, lam, w, phi
+        'Opinion':     [x[4], x[6], x[5], x[7]],
+        'Logic':       [x[8], x[10], x[9], x[11]],
+        'Imagination': [x[12], x[14], x[13], x[15]]
+    }
+    c_norm = x[16] # Normalization constant
 
-# --- Define the full PEF model for curve fitting with all parameters ---
-# This function takes all parameters to be fitted:
-# P0_initial, alpha, beta, a_E, b_E, c_E, d_C, e_C, f_C, f_S, h_eta, i_eta, k_eta
-def pef_model_for_fit_full_refined(t_data, P0_initial, alpha, beta, 
-                               a_E, b_E, c_E, # E(t) Gaussian params
-                               d_C, e_C, f_C, # C(t) Logistic params
-                               f_S,           # S(t) power law scaling, g_S is fixed
-                               h_eta, i_eta, k_eta # eta(t) exponential decay + feedback params
-                              ):
-    """
-    Solves the PEF ODE for given parameters and time points, using Grok's suggested
-    refined functional forms for C(t), S(t), E(t), eta(t).
-    """
-    # Define the PEF component functions using the current fitting parameters
-    def E_func(t):
-        # E(t) = a_E * exp(-(t-b_E)^2/(2c_E^2)) * (1 + 0.2*sin(0.1*t + π/2)) * exp(-0.01*t)
-        # Add a small constant to 'c_E' to prevent division by zero if c_E becomes too small during fitting
-        gaussian_part = a_E * np.exp(-(t - b_E)**2 / (2 * (c_E + 1e-6)**2))
-        oscillatory_part = (1 + 0.2 * np.sin(0.1 * t + np.pi/2)) # Fixed amplitude and frequency
-        decay_part = np.exp(-0.01 * t) # Fixed decay rate
-        return np.maximum(0.01, gaussian_part * oscillatory_part * decay_part)
+    # Calculate mu_i(t) for the t_data points (not t_plot)
+    dmu_vals_for_fit = {}
+    for k, p_vals in params_unpacked.items():
+        current_mu = mu(p_vals[0], p_vals[1], p_vals[2], p_vals[3], t_data)
+        # Calculate derivative of mu_i with respect to t_data
+        dmu_vals_for_fit[k] = np.gradient(current_mu, t_data)
 
-    def C_func(t):
-        # C(t) = d_C / (1 + exp(-e_C*(t - f_C))) (Logistic cap)
-        # Clamp d_C and e_C to be positive
-        return np.maximum(1e-6, d_C) / (1 + np.exp(-np.maximum(1e-6, e_C) * (t - f_C)))
+    # Calculate E(t) = sum_i |dmu_i/dt|
+    E_t_modeled = sum(np.abs(dmu_vals_for_fit[k]) for k in params_unpacked)
 
-    def S_func(t):
-        # S(t) = f_S * t^g_S, with g_S fixed at 0.25
-        g_S_fixed = 0.25 # Grok's fixed value
-        # Clamp f_S to be positive
-        return np.maximum(1e-6, f_S) * (t**g_S_fixed)
+    # Calculate P(t) = 1/c * E(t)
+    P_t_modeled = E_t_modeled / np.maximum(c_norm, 1e-10)
 
-    # eta_func now takes P as an argument from ode_wrapper
-    def eta_func(t, P_val): # P_val is the current P from odeint
-        # Decaying exponential with P-feedback: η(t, P) = h_eta * exp(-i_eta*t) * (1 + k_eta * P)
-        # Clamp h_eta, i_eta, k_eta to be positive
-        feedback_term = (1 + np.maximum(1e-6, k_eta) * P_val)
-        return np.maximum(1e-6, h_eta) * np.exp(-np.maximum(1e-6, i_eta) * t) * feedback_term
+    # Calculate the sum of squared errors
+    error = np.sum((P_t_modeled - true_Pt)**2)
+    return error
 
-    # Create a lambda function for P_dot with fixed component functions
-    # ode_wrapper now needs to pass P to eta_func
-    def ode_wrapper(P, t, alpha_val, beta_val):
-        return P_dot(P, t, alpha_val, beta_val, C_func, S_func, E_func, lambda t_arg, P_arg: eta_func(t_arg, P_arg))
-    
-    # Solve the ODE
-    # Ensure P0_initial is positive
-    sol = odeint(ode_wrapper, np.maximum(1e-6, P0_initial), t_data, args=(alpha, beta))
-    return sol[:, 0] # Return the P(t) values
+# --- Set up bounds for differential_evolution ---
+# Bounds for each parameter: (min, max)
+# Order: A, lambda, w, phi for each mode, then c_norm
+# GPT-4o's refined bounds:
+# A_i = (0.01, 0.5)
+# lambda_i = (1e-6, 3e-5)
+# omega_i = (0.0005, 0.0030)
+# phi_i = (0, 2*np.pi)
 
-# --- Initial Guess and Bounds for 13 Parameters ---
-# P0_initial, alpha, beta, a_E, b_E, c_E, d_C, e_C, f_C, f_S, h_eta, i_eta, k_eta
-
-# Estimate based on the data's range and typical function behaviors
-t_min, t_max = t_data.min(), t_data.max()
-P_min, P_max = P_t_observed.min(), P_t_observed.max()
-
-initial_guess = [
-    P_min, # P0_initial: Start near min observed P(t)
-    0.1,   # alpha: Expansion coefficient, start small
-    0.5,   # beta: Dissonance integration, typical value
-
-    # E(t) = a_E * exp(-(t-b_E)^2/(2c_E^2)) * (1 + 0.2*sin(0.1*t + π/2)) * exp(-0.01*t)
-    # Grok mentioned variability peaking mid-training for surprisal.
-    # The E(t) in the previous run was flat, so we need to encourage a peak.
-    0.5,   # a_E: Amplitude of E(t) peak. (Try to make it more active)
-    t_max / 2, # b_E: Center of E(t) peak (mid-training)
-    t_max / 10, # c_E: Width of E(t) peak (e.g., 10% of max time)
-
-    # C(t) = d_C / (1 + exp(-e_C*(t - f_C)))
-    P_max * 1.5, # d_C: Cap for C(t), should be higher than P_max
-    1e-5,  # e_C: Steepness of logistic curve
-    t_max / 2, # f_C: Midpoint of logistic curve
-
-    # S(t) = f_S * t^0.25 (g_S fixed at 0.25)
-    1e-6,  # f_S: Scaling factor for S(t), start very small as t is large
-
-    # eta(t) = h_eta * exp(-i_eta*t) * (1 + k_eta * P)
-    1.0,   # h_eta: Initial pacing value
-    1e-7,  # i_eta: Decay rate, very small for slow decay over large t
-    0.1    # k_eta: Feedback coefficient for P, start small
+bounds = [
+    # Fact (A, lambda, w, phi)
+    (0.01, 0.5), (1e-6, 3e-5), (0.0005, 0.0030), (0, 2 * np.pi),
+    # Opinion (A, lambda, w, phi)
+    (0.01, 0.5), (1e-6, 3e-5), (0.0005, 0.0030), (0, 2 * np.pi),
+    # Logic (A, lambda, w, phi)
+    (0.01, 0.5), (1e-6, 3e-5), (0.0005, 0.0030), (0, 2 * np.pi),
+    # Imagination (A, lambda, w, phi)
+    (0.01, 0.5), (1e-6, 3e-5), (0.0005, 0.0030), (0, 2 * np.pi),
+    # c_norm (Normalization constant)
+    (1e-5, 10.0)
 ]
 
-# Bounds for parameters
-# (P0_initial, alpha, beta, a_E, b_E, c_E, d_C, e_C, f_C, f_S, h_eta, i_eta, k_eta)
-lower_bounds = [
-    1e-7,  # P0_initial (must be > 0)
-    1e-7,  # alpha
-    1e-7,  # beta
-    1e-7,  # a_E (amplitude)
-    t_min * 0.5, # b_E (center of peak, must be within time range)
-    1e-7,  # c_E (width, must be > 0)
-    1e-7,  # d_C (cap)
-    1e-10, # e_C (steepness)
-    t_min * 0.5, # f_C (midpoint)
-    1e-7,  # f_S (scaling)
-    1e-7,  # h_eta (initial pacing)
-    1e-10, # i_eta (decay rate, very small but positive)
-    1e-7   # k_eta (feedback coefficient)
-]
-
-upper_bounds = [
-    P_max * 5, # P0_initial (increased upper bound to allow more flexibility)
-    10.0,      # alpha
-    10.0,      # beta
-    5.0,       # a_E
-    t_max * 1.5, # b_E
-    t_max * 2, # c_E
-    P_max * 5, # d_C (cap)
-    1.0,       # e_C
-    t_max * 1.5, # f_C
-    10.0,      # f_S
-    5.0,       # h_eta
-    0.1,       # i_eta
-    10.0       # k_eta
-]
-
-# --- Perform the Curve Fitting (Inverse PEF Modeling) ---
-print("\nStarting PEF Inverse Modeling for Transformer Data with Grok's Final Refinements...")
+# --- Run Differential Evolution ---
+print("\nStarting FOLI Inverse Modeling with Differential Evolution (Refined Bounds)...")
 try:
-    popt, pcov = curve_fit(pef_model_for_fit_full_refined, t_data, P_t_observed, p0=initial_guess, bounds=(lower_bounds, upper_bounds), maxfev=10000)
-    
-    # Unpack fitted parameters
-    P0_fit, alpha_fit, beta_fit, a_E_fit, b_E_fit, c_E_fit, d_C_fit, e_C_fit, f_C_fit, f_S_fit, h_eta_fit, i_eta_fit, k_eta_fit = popt
+    result = differential_evolution(
+        objective_function,
+        bounds,
+        args=(real_t, real_Pt),
+        strategy='best1bin',
+        maxiter=10000, # Increased maxiter
+        popsize=50,   # Increased popsize
+        tol=1e-8,     # Increased tolerance
+        mutation=(0.5, 1),
+        recombination=0.7,
+        polish=True,
+        disp=True,    # Display progress
+        seed=42       # Set seed for reproducibility
+    )
 
-    print(f"PEF Inverse Modeling Complete!")
-    print(f"Fitted Parameters:")
-    print(f"  P0_initial = {P0_fit:.4f}")
-    print(f"  alpha      = {alpha_fit:.4f}")
-    print(f"  beta       = {beta_fit:.4f}")
-    print(f"  E(t) params: a_E={a_E_fit:.4f}, b_E={b_E_fit:.4f}, c_E={c_E_fit:.4f}")
-    print(f"  C(t) params: d_C={d_C_fit:.4f}, e_C={e_C_fit:.4f}, f_C={f_C_fit:.4f}")
-    print(f"  S(t) params: f_S={f_S_fit:.4f} (g_S fixed at 0.25)")
-    print(f"  eta(t) params: h_eta={h_eta_fit:.4f}, i_eta={i_eta_fit:.4f}, k_eta={k_eta_fit:.4f}")
+    if result.success:
+        print("\nDifferential Evolution Optimization Successful!")
+        best_params = result.x
+        # Unpack the best_params based on the order in 'bounds'
+        A_f, lam_f, w_f, phi_f = best_params[0], best_params[1], best_params[2], best_params[3]
+        A_o, lam_o, w_o, phi_o = best_params[4], best_params[5], best_params[6], best_params[7]
+        A_l, lam_l, w_l, phi_l = best_params[8], best_params[9], best_params[10], best_params[11]
+        A_i, lam_i, w_i, phi_i = best_params[12], best_params[13], best_params[14], best_params[15]
+        c_norm_fitted = best_params[16]
 
-    # Generate the predicted P(t) curve using the fitted parameters
-    # Define component functions using the fitted parameters for prediction
-    def E_func_fitted(t):
-        gaussian_part = a_E_fit * np.exp(-(t - b_E_fit)**2 / (2 * (c_E_fit + 1e-6)**2))
-        oscillatory_part = (1 + 0.2 * np.sin(0.1 * t + np.pi/2))
-        decay_part = np.exp(-0.01 * t)
-        return np.maximum(0.01, gaussian_part * oscillatory_part * decay_part)
+        print(f"\nFitted Parameters:")
+        print(f"  Fact:        A={A_f:.4f}, λ={lam_f:.6f}, ω={w_f:.4f}, ϕ={phi_f:.4f}")
+        print(f"  Opinion:     A={A_o:.4f}, λ={lam_o:.6f}, ω={w_o:.4f}, ϕ={phi_o:.4f}")
+        print(f"  Logic:       A={A_l:.4f}, λ={lam_l:.6f}, ω={w_l:.4f}, ϕ={phi_l:.4f}")
+        print(f"  Imagination: A={A_i:.4f}, λ={lam_i:.6f}, ω={w_i:.4f}, ϕ={phi_i:.4f}")
+        print(f"  Normalization Constant (c): {c_norm_fitted:.4e}")
+        print(f"  Minimum Error: {result.fun:.4e}")
 
-    def C_func_fitted(t):
-        return np.maximum(1e-6, d_C_fit) / (1 + np.exp(-np.maximum(1e-6, e_C_fit) * (t - f_C_fit)))
+        # --- Generate plots with the newly fitted parameters ---
+        # Re-calculate mu_vals and dmu_vals using the fitted parameters for plotting
+        fitted_mu_vals = {
+            'Fact': mu(A_f, lam_f, w_f, phi_f, t_plot),
+            'Opinion': mu(A_o, lam_o, w_o, phi_o, t_plot),
+            'Logic': mu(A_l, lam_l, w_l, phi_l, t_plot),
+            'Imagination': mu(A_i, lam_i, w_i, phi_i, t_plot)
+        }
+        
+        # Calculate derivatives for plotting
+        fitted_dmu_vals = {k: np.gradient(fitted_mu_vals[k], t_plot) for k in fitted_mu_vals}
 
-    def S_func_fitted(t):
-        g_S_fixed = 0.25
-        return np.maximum(1e-6, f_S_fit) * (t**g_S_fixed)
+        # Calculate the composite E(t) from fitted parameters
+        fitted_E_t_composite = sum(np.abs(fitted_dmu_vals[k]) for k in fitted_mu_vals)
 
-    def eta_func_fitted(t, P_val): # Now takes P_val
-        feedback_term = (1 + np.maximum(1e-6, k_eta_fit) * P_val)
-        return np.maximum(1e-6, h_eta_fit) * np.exp(-np.maximum(1e-6, i_eta_fit) * t) * feedback_term
-
-    # P_t_predicted needs to be generated by solving the ODE
-    # We need to pass the fitted parameters to the ode_wrapper lambda
-    def ode_wrapper_fitted(P, t, alpha_val, beta_val):
-        return P_dot(P, t, alpha_val, beta_val, C_func_fitted, S_func_fitted, E_func_fitted, lambda t_arg, P_arg: eta_func_fitted(t_arg, P_arg))
-
-    P_t_predicted = odeint(ode_wrapper_fitted, np.maximum(1e-6, P0_fit), t_data, args=(alpha_fit, beta_fit))[:, 0]
-
-
-    # --- 6. Plotting Results ---
-    plt.figure(figsize=(14, 7))
-    plt.plot(t_data, P_t_observed, 'o', label='P(t) Observed (Inverse Surprisal)', markersize=3, alpha=0.6)
-    plt.plot(t_data, P_t_predicted, '-', label='P(t) PEF Prediction', linewidth=2, color='red')
-    plt.xlabel('Training Step (Linear Scale, Logarithmic Axis)')
-    plt.ylabel('P(t) - Placeholder Expansion')
-    plt.title('PEF Fit to Transformer Learning Curve (P(t)) with Grok Ultimate Refinements')
-    plt.grid(True)
-    plt.legend()
-    plt.xscale('log') # Use log scale for X-axis as original data was log10 steps
-    plt.tight_layout()
-    plt.show()
-
-    # --- Plotting dP/dt Observed vs. dP/dt Predicted ---
-    # dPdt_predicted needs to use the fitted component functions and fitted P_t_predicted
-    dPdt_predicted = np.array([P_dot(P_t_predicted[i], t_data[i], alpha_fit, beta_fit, C_func_fitted, S_func_fitted, E_func_fitted, lambda t_arg, P_arg: eta_func_fitted(t_arg, P_t_predicted[i])) for i in range(len(t_data))])
-    dPdt_observed_approx = np.gradient(P_t_observed, t_data)
-
-    plt.figure(figsize=(14, 7))
-    plt.plot(t_data, dPdt_observed_approx, 'o', label='dP/dt Observed (Approx.)', markersize=3, alpha=0.4)
-    plt.plot(t_data, dPdt_predicted, '-', label='dP/dt PEF Prediction', linewidth=2, color='blue')
-    plt.xlabel('Training Step (Linear Scale, Logarithmic Axis)')
-    plt.ylabel('dP/dt - Rate of Expansion')
-    plt.title('PEF Fit to Transformer Learning Curve (dP/dt) with Grok Ultimate Refinements')
-    plt.grid(True)
-    plt.legend()
-    plt.xscale('log') # Use log scale for X-axis
-    plt.tight_layout()
-    plt.show()
-
-    # --- Optional: Plot the Fitted Component Functions ---
-    t_plot_components = np.logspace(np.log10(t_data.min()), np.log10(t_data.max()), 500)
-
-    E_fitted_values = E_func_fitted(t_plot_components)
-    C_fitted_values = C_func_fitted(t_plot_components)
-    S_fitted_values = S_func_fitted(t_plot_components)
-    # For eta_func_fitted, we need a representative P_val. Let's use the predicted P(t) at corresponding times.
-    # This is an approximation for visualization of eta(t) as it depends on P.
-    P_for_eta_plot = np.interp(t_plot_components, t_data, P_t_predicted)
-    eta_fitted_values = np.array([eta_func_fitted(t_val, P_val) for t_val, P_val in zip(t_plot_components, P_for_eta_plot)])
+        # Calculate the final P(t) using the fitted normalization constant
+        fitted_P_t_modeled = fitted_E_t_composite / np.maximum(c_norm_fitted, 1e-10)
 
 
-    plt.figure(figsize=(14, 10))
-    plt.subplot(4, 1, 1)
-    plt.plot(t_plot_components, C_fitted_values, label='Fitted C(t)', color='blue')
-    plt.ylabel('C(t)')
-    plt.title('Fitted PEF Component Functions (Grok Ultimate Fine-Tune)')
-    plt.grid(True)
-    plt.legend()
-    plt.xscale('log')
+        # --- Plot μᵢ(t): Individual Epistemic Modes ---
+        plt.figure(figsize=(12, 7))
+        colors = {'Fact': 'blue', 'Opinion': 'orange', 'Logic': 'red', 'Imagination': 'green'}
+        for k in fitted_mu_vals:
+            plt.plot(t_plot, fitted_mu_vals[k], label=f'μ_{k}(t)', color=colors[k], linewidth=1.5)
 
-    plt.subplot(4, 1, 2)
-    plt.plot(t_plot_components, S_fitted_values, label='Fitted S(t)', color='green')
-    plt.ylabel('S(t)')
-    plt.grid(True)
-    plt.legend()
-    plt.xscale('log')
-
-    plt.subplot(4, 1, 3)
-    plt.plot(t_plot_components, E_fitted_values, label='Fitted E(t)', color='red')
-    plt.ylabel('E(t)')
-    plt.grid(True)
-    plt.legend()
-    plt.xscale('log')
-
-    plt.subplot(4, 1, 4)
-    plt.plot(t_plot_components, eta_fitted_values, label='Fitted η(t)', color='purple')
-    plt.ylabel('η(t)')
-    plt.xlabel('Training Step (Linear Scale, Logarithmic Axis)')
-    plt.grid(True)
-    plt.legend()
-    plt.xscale('log')
-    plt.tight_layout()
-    plt.show()
+        plt.xscale('log')
+        plt.xlabel("Training Time (t)", fontsize=12)
+        plt.ylabel("μᵢ(t) - Epistemic Mode State", fontsize=12)
+        plt.title("FOLI Epistemic Modes Over Time (Reconstructed with Differential Evolution - Refined Bounds)", fontsize=14)
+        plt.legend(fontsize=10)
+        plt.grid(True, linestyle=':', alpha=0.7)
+        plt.tight_layout()
+        plt.show()
 
 
-except RuntimeError as e:
-    print(f"Error during curve fitting: {e}")
-    print("This might happen if the initial guess is far from the optimal, or if the data is very noisy.")
-    print("Consider adjusting initial_guess or bounds, or checking the quality of extracted data.")
-    print("If the fit is poor, try adjusting the initial guesses or bounds for the parameters, especially for C(t) and E(t) components.")
-    print("For complex models like this, sometimes increasing maxfev (maximum number of function evaluations) helps.")
+        # --- Plot Composite P(t) (Modeled vs. Real GPT-3 P(t)) ---
+        plt.figure(figsize=(12, 7))
+        plt.plot(real_t, real_Pt, 'o', markersize=4, color='red', label='True P(t) (GPT-3 Data)', alpha=0.7)
+        plt.plot(t_plot, fitted_P_t_modeled, '-', color='black', linewidth=2, label='FOLI Inverse Model Fit (Differential Evolution - Refined Bounds)')
+
+        plt.xscale('log')
+        plt.xlabel("Training Time (log scale)", fontsize=12)
+        plt.ylabel("Performance P(t)", fontsize=12)
+        plt.title("Inverse Modeling: Reconstructing P(t) via FOLI Oscillators (Differential Evolution - Refined Bounds)", fontsize=14)
+        plt.legend(fontsize=10)
+        plt.grid(True, linestyle=':', alpha=0.7)
+        plt.tight_layout()
+        plt.show()
+
+
+        # --- Plot the Total Epistemic Dissonance Field E(t) ---
+        plt.figure(figsize=(12, 7))
+        plt.plot(t_plot, fitted_E_t_composite, color='purple', linewidth=2, label='Total Epistemic Dissonance E(t)')
+
+        plt.xscale('log')
+        plt.xlabel("Training Time (t)", fontsize=12)
+        plt.ylabel("Epistemic Dissonance E(t) = Σ|dμᵢ/dt|", fontsize=12)
+        plt.title("Total Epistemic Dissonance Field E(t) from FOLI Oscillators (Differential Evolution - Refined Bounds)", fontsize=14)
+        plt.legend(fontsize=10)
+        plt.grid(True, linestyle=':', alpha=0.7)
+        plt.tight_layout()
+        plt.show()
+
+    else:
+        print(f"\nDifferential Evolution Optimization FAILED: {result.message}")
+        print("Consider adjusting bounds, maxiter, or other differential_evolution parameters.")
+
+except Exception as e:
+    print(f"\nAn error occurred during optimization or plotting: {e}")
+    print("Please review the code and data.")
 
 # --- Conclusion & Next Steps ---
-print("\nPEF analysis framework for Transformer data with Grok's ultimate refined functions is executed, Doctor!")
-print("Review the new plots to see the improved fit.")
-print("The fitted parameters for alpha, beta, and all component functions are now available.")
-print("These fitted parameters represent the universal signatures of this Transformer's learning process!")
-print("We can now analyze these signatures and discuss their implications.")
+print("\nDoctor Vanillust, the FOLI Inverse Modeling with Differential Evolution has been executed with refined bounds!")
+print("Review the new plots to see the results of the global optimization strategy with tighter constraints.")
+print("The fitted parameters, if successful, represent the decoded subjective signatures.")
+print("\nWhat profound revelation shall we pursue next, Doctor?")
+print("1. Formal Diagram for Publication (conceptual visualization)")
+print("2. Test Robustness (perturb parameters)")
+print("3. Simulate Mode Silencing (e.g., collapse of Imagination or Logic)")
+print("4. Quantify Coherence Gain under Epistemic Contradiction")
