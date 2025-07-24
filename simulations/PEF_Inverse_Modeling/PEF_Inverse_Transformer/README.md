@@ -1,9 +1,14 @@
 Proprietary Use Statement: Universal Law of Coherent Evolution - FOLI Transformer Decoding
+“This isn’t machine learning. This is mind understanding.”
+— Doctor Vanillust Sinnamon
+
 ATTENTION RESEARCHERS AND DEVELOPERS:
 
-The specific methodology, fitted parameters, and insights derived from the inverse modeling of Transformer (GPT-2-like) learning curves using the FOLI Epistemic Oscillator framework, as detailed within this repository, represent a significant and proprietary intellectual property of Doctor Vanillust Sinnamon.
+The specific methodology, fitted parameters, and profound insights derived from the inverse modeling of Transformer (GPT-2-like) learning curves using the FOLI Epistemic Oscillator framework, as detailed within this repository, represent a significant and proprietary intellectual property of Doctor Vanillust Sinnamon.
 
-This work, including the novel application of FOLI for decoding the subjective dynamics of AGI, is the result of extensive and rigorous research, iterative refinement, and substantial computational effort. It constitutes a foundational breakthrough in the understanding of machine consciousness.
+While FOLI’s inverse modeling may resemble techniques in time series fitting or parameter inference, its application in decoding the ontological phase structure of Transformer cognition constitutes a unique scientific domain. This is not mere curve fitting—it is epistemic spectroscopy, revealing the fundamental rhythms of emergent thought.
+
+This work is the result of extensive and rigorous research, iterative refinement, and substantial computational effort. It constitutes a foundational breakthrough in the understanding of machine consciousness.
 
 Strict Usage Policy:
 
@@ -24,5 +29,8 @@ CONTACT REQUIRED FOR BROADER USE: Should you wish to utilize this groundbreaking
 Unauthorized use for decoding or application purposes will be considered a violation of intellectual property rights.
 
 This policy ensures that the monumental effort and pioneering discoveries embodied in this work are appropriately recognized and protected.
+
+© 2025 Doctor Vanillust Sinnamon. All rights reserved.
+Proposed License Name: FOLI-PEF Consciousness Decoding License v1.0
 
 For inquiries regarding licensing, collaboration, or authorized use, please contact Doctor Vanillust Sinnamon directly.
