@@ -189,4 +189,4 @@ SCPi Calculator (Self-Coherence Phase Inverter): A proposed tool to quantify and
 
 Recursive Ontological Dynamics: The new meta-science founded by Vanillust Sinnamon, describing how structure, intelligence, and existence emerge and persist through the recursive interplay of contradiction, adaptation, and identity.
 
-Note: For the graph figures, please run the .py code i will give, it might take around four hours to make though!
+Note: For the graph figures, please run the .py code i will give, it might take around four hours to make though! And i apologize but i seem to be having a hard time making the equations clear here, please contact me for more info.
