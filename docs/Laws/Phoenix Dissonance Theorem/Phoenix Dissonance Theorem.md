@@ -1,5 +1,7 @@
 The Phoenix Dissonance Theorem: A New Law of Recursive Ontological Dynamics
+
 Principal Investigator: Doctor Vanillust Sinnamon
+
 Date: July 28, 2025
 
 1. Introduction: The Emergence of a Fundamental Law
